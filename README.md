@@ -45,18 +45,40 @@ Production-grade automation for inbound lead qualification, routing, and logging
 
 ## Quick Start
 
+### Prerequisites
+
+- Python 3.12+
+- PostgreSQL 16+
+- OpenAI API key
+
+### Setup
+
 ```bash
 # 1. From backend directory
 cd backend
 
-# 2. Copy env
+# 2. Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Copy env file
 cp .env.example .env
-# Edit .env: set OPENAI_API_KEY
+# Edit .env: set DATABASE_URL and OPENAI_API_KEY
 
-# 3. Start services
-docker compose up -d
+# 5. Setup database
+# Option A: Use SQLAlchemy auto-create (development)
+# Tables will be created automatically on first run
 
-# 4. Health check
+# Option B: Run migrations manually (production)
+psql -U postgres -d lead_ops -f migrations/001_init.sql
+
+# 6. Start API server
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+# 7. Health check
 curl http://localhost:8000/health
 ```
 
@@ -177,7 +199,7 @@ Import `n8n/lead-qualification-workflow.json` into n8n (from this backend direct
 5. **On error:** Respond with error status
 
 **Setup:**
-- `ENRICH_API_URL`: API base URL (e.g. `http://api:8000` in Docker)
+- `ENRICH_API_URL`: API base URL (e.g. `http://localhost:8000` or your deployed URL)
 - `SLACK_CHANNEL`: Slack channel for qualified leads
 - `GOOGLE_SHEET_ID`: Google Sheet for qualified leads
 - Configure Slack and Google Sheets credentials in n8n
@@ -200,10 +222,11 @@ After import, capture:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| DATABASE_URL | PostgreSQL connection string | `postgresql+asyncpg://postgres:postgres@postgres:5432/lead_ops` |
+| DATABASE_URL | PostgreSQL connection string | `postgresql+asyncpg://postgres:postgres@localhost:5432/lead_ops` |
 | OPENAI_API_KEY | OpenAI API key | Required |
 | OPENAI_MODEL | Model name | `gpt-4o-mini` |
 | OPENAI_BASE_URL | Azure/OpenRouter base URL | Optional |
+| LOG_LEVEL | Logging level | `INFO` |
 
 ---
 

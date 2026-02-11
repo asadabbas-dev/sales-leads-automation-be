@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@postgres:5432/lead_ops"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/lead_ops"
 
     # OpenAI (or compatible API)
     openai_api_key: str = ""
