@@ -5,12 +5,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from api.config import settings
 from api.db.models import Base
 
-# Use sync URL for create_async_engine (postgresql+asyncpg://)
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.log_level == "DEBUG",
+# Build the database URL from individual settings in .env
+DATABASE_URL = (
+    f"postgresql+asyncpg://{settings.db_user}:{settings.db_password}"
+    f"@{settings.db_host}:{settings.db_port}/{settings.db_name}"
 )
 
+# Async engine
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=settings.log_level.upper() == "DEBUG",
+)
+
+# Async session maker
 async_session = async_sessionmaker(
     engine,
     class_=AsyncSession,
