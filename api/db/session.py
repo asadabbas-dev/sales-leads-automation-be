@@ -1,23 +1,26 @@
 """Database session and engine."""
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.engine.url import URL
 
 from api.config import settings
 from api.db.models import Base
 
-# Build the database URL from individual settings in .env
-DATABASE_URL = (
-    f"postgresql+asyncpg://{settings.db_user}:{settings.db_password}"
-    f"@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+# Build async DB URL dynamically
+DATABASE_URL = URL.create(
+    drivername="postgresql+asyncpg",
+    username=settings.db_user,
+    password=settings.db_password,
+    host=settings.db_host,
+    port=settings.db_port,
+    database=settings.db_name,
 )
 
-# Async engine
 engine = create_async_engine(
     DATABASE_URL,
     echo=settings.log_level.upper() == "DEBUG",
 )
 
-# Async session maker
 async_session = async_sessionmaker(
     engine,
     class_=AsyncSession,
