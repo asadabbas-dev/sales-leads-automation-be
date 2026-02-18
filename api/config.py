@@ -1,33 +1,25 @@
-"""Application configuration."""
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=False,  # so DB_HOST works regardless of case
+        case_sensitive=False,
     )
 
-    # Database fields (read from .env)
-    db_host: str = "localhost"
-    db_port: int = 5432
-    db_name: str = "lead_ops"
-    db_user: str = "postgres"
-    db_password: str = "postgres"
+    # Database
+    db_host: str
+    db_port: int
+    db_name: str
+    db_user: str
+    db_password: str
 
-    # Construct database URL dynamically
-    @property
-    def database_url(self) -> str:
-        return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
-
-    # OpenAI (or compatible API)
-    openai_api_key: str = ""
+    # OpenAI
+    openai_api_key: str
     openai_model: str = "gpt-4o-mini"
-    openai_base_url: str | None = None  # For Azure/OpenRouter
+    openai_base_url: str | None = None
 
     # App
     log_level: str = "INFO"
-
 
 settings = Settings()
