@@ -2,16 +2,24 @@
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=False,
+        case_sensitive=False,  # so DB_HOST works regardless of case
     )
 
-    # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/lead_ops"
+    # Database fields (read from .env)
+    db_host: str = "localhost"
+    db_port: int = 5432
+    db_name: str = "lead_ops"
+    db_user: str = "postgres"
+    db_password: str = "postgres"
+
+    # Construct database URL dynamically
+    @property
+    def database_url(self) -> str:
+        return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
 
     # OpenAI (or compatible API)
     openai_api_key: str = ""
