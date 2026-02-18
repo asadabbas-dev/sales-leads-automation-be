@@ -1,9 +1,10 @@
-"""Application configuration."""
-
-from pydantic import BaseSettings, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 
 class Settings(BaseSettings):
+    """App settings from .env file."""
+
     # Database
     db_host: str = Field(..., env="DB_HOST")
     db_port: int = Field(..., env="DB_PORT")
@@ -18,10 +19,11 @@ class Settings(BaseSettings):
     # App
     log_level: str = "INFO"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
 
 
 settings = Settings()
