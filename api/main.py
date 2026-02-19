@@ -1,5 +1,5 @@
 """
-Lead Ops Automation - FastAPI Service
+Lead Ops Automation — FastAPI Service
 
 Production-grade lead enrichment with idempotency, retry safety, and full audit trail.
 """
@@ -15,15 +15,14 @@ from api.routes import enrich, runs
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize DB on startup."""
+    """Initialize DB tables on startup (idempotent via CREATE TABLE IF NOT EXISTS)."""
     await init_db()
     yield
-    # Cleanup if needed
 
 
 app = FastAPI(
     title="Lead Ops Automation API",
-    description="Automatic lead qualification, routing, and logging with retry safety",
+    description="Automatic lead qualification, routing, and logging with retry safety.",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -40,7 +39,7 @@ app.include_router(enrich.router, prefix="/enrich-lead")
 app.include_router(runs.router)
 
 
-@app.get("/health")
+@app.get("/health", tags=["health"])
 async def health():
-    """Health check for load balancers and orchestration."""
+    """Health check for load balancers and container orchestration."""
     return {"status": "ok"}

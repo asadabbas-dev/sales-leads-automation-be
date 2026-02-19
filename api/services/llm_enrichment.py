@@ -1,7 +1,7 @@
 """
 LLM-based lead classification and structured extraction.
 
-Strict schema enforcement - fail loudly on mismatch.
+Strict schema enforcement — fail loudly on mismatch.
 """
 
 import json
@@ -10,7 +10,7 @@ import re
 from openai import AsyncOpenAI
 
 from api.config import settings
-from api.schemas.enrich import EnrichedLead, EnrichLeadResponse
+from api.schemas.enrich import EnrichLeadResponse
 
 
 SYSTEM_PROMPT = """You are a lead qualification system. Analyze the raw lead payload and:
@@ -28,24 +28,28 @@ Output ONLY valid JSON matching this exact schema (no markdown, no extra text):
     "name": "string or null",
     "email": "string or null",
     "phone": "string or null",
-    "budget": number or null,
+    "budget": 5000,
     "intent": "string or null",
-    "urgency": "low" or "medium" or "high" or null,
+    "urgency": "low",
     "industry": "string or null"
   }
 }"""
 
 
+def _build_client() -> AsyncOpenAI:
+    """Build the AsyncOpenAI client, optionally with a custom base URL."""
+    kwargs: dict = {"api_key": settings.openai_api_key}
+    if settings.openai_base_url:
+        kwargs["base_url"] = settings.openai_base_url
+    return AsyncOpenAI(**kwargs)
+
+
 async def enrich_lead_with_llm(payload: dict) -> EnrichLeadResponse:
     """
-    Call LLM to classify and extract. Returns strict EnrichLeadResponse.
-    Raises on schema mismatch.
+    Call LLM to classify and extract structured lead data.
+    Returns a strict EnrichLeadResponse — raises on schema mismatch.
     """
-    client = AsyncOpenAI(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url,
-    )
-
+    client = _build_client()
     user_content = json.dumps(payload, default=str)
 
     response = await client.chat.completions.create(
@@ -61,12 +65,10 @@ async def enrich_lead_with_llm(payload: dict) -> EnrichLeadResponse:
     if not content:
         raise ValueError("LLM returned empty response")
 
-    # Strip markdown code blocks if present
     content = _strip_markdown_json(content)
-
     data = json.loads(content)
 
-    # Strict validation - Pydantic raises ValidationError on mismatch
+    # Strict Pydantic validation — raises ValidationError on mismatch
     return EnrichLeadResponse.model_validate(data)
 
 
@@ -77,5 +79,3 @@ def _strip_markdown_json(text: str) -> str:
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
     return text
-
-

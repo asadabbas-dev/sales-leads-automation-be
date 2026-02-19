@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 
 class EnrichedLead(BaseModel):
-    """Structured lead fields extracted from raw payload."""
+    """Structured lead fields extracted from the raw payload."""
 
     name: str | None = None
     email: str | None = None

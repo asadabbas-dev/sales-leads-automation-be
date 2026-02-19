@@ -6,7 +6,6 @@ from sqlalchemy.engine.url import URL
 from api.config import settings
 from api.db.models import Base
 
-# Build async DB URL dynamically
 DATABASE_URL = URL.create(
     drivername="postgresql+asyncpg",
     username=settings.db_user,
@@ -31,6 +30,6 @@ async_session = async_sessionmaker(
 
 
 async def init_db():
-    """Create tables if they don't exist."""
+    """Create tables if they don't exist (safe to call on every startup)."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
