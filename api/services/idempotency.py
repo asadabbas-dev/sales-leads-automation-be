@@ -5,6 +5,7 @@ sha256(email + phone) - normalized for consistent hashing.
 """
 
 import hashlib
+import re
 
 
 def compute_idempotency_key(payload: dict) -> str:
@@ -14,10 +15,17 @@ def compute_idempotency_key(payload: dict) -> str:
     Uses sha256(email + phone). Extracts email/phone from common field names
     (case-insensitive). Empty/missing values normalized to empty string.
     """
-    email = _extract_string(payload, ["email", "Email", "EMAIL"])
+    email = _extract_string(payload, ["email", "Email", "EMAIL"]).lower()
     phone = _extract_string(payload, ["phone", "Phone", "PHONE", "mobile", "tel"])
 
-    combined = f"{email}{phone}"
+    # Normalize phone to digits only to avoid hash drift across formats.
+    phone_norm = re.sub(r"\D+", "", phone)
+
+    # If we can't identify a lead deterministically, do NOT generate a key.
+    if not email and not phone_norm:
+        return ""
+
+    combined = f"{email}{phone_norm}"
     return hashlib.sha256(combined.encode("utf-8")).hexdigest()
 
 

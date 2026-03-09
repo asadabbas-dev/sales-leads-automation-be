@@ -17,6 +17,7 @@ from api.db.session import async_session
 from api.schemas.enrich import EnrichLeadResponse
 from api.services.idempotency import compute_idempotency_key
 from api.services.llm_enrichment import enrich_lead_with_llm
+from api.db.leads_repository import ensure_lead_from_payload, apply_enrichment_to_lead
 
 router = APIRouter()
 
@@ -50,6 +51,18 @@ async def enrich_lead(request: Request):
 
     idempotency_key = compute_idempotency_key(payload)
     source = _extract_source(payload)
+    lead_id = None
+
+    # Ensure a lead row exists early (no LLM call here)
+    if idempotency_key:
+        async with async_session() as session:
+            lead_id = await ensure_lead_from_payload(
+                session=session,
+                idempotency_key=idempotency_key,
+                payload=payload,
+                source=source,
+            )
+            await session.commit()
 
     # ── 2. Idempotency check (skip if no key — anonymous lead) ───────────────
     if idempotency_key:
@@ -83,11 +96,13 @@ async def enrich_lead(request: Request):
             await create_run(
                 session=session,
                 source=source,
+                workflow=None,
                 payload_json=payload,
                 result_json=None,
                 status="failed",
                 error=str(e),
                 idempotency_key=idempotency_key,
+                lead_id=lead_id,
             )
             if idempotency_key:
                 # Release the key so the caller can retry
@@ -98,15 +113,23 @@ async def enrich_lead(request: Request):
     # ── 4. Persist successful run ────────────────────────────────────────────
     result_dict = result.model_dump()
     async with async_session() as session:
-        await create_run(
+        run = await create_run(
             session=session,
             source=source,
+            workflow=None,
             payload_json=payload,
             result_json=result_dict,
             status="success",
             error=None,
             idempotency_key=idempotency_key,
+            lead_id=lead_id,
         )
+        if lead_id:
+            await apply_enrichment_to_lead(
+                session=session,
+                lead_id=lead_id,
+                run=run,
+            )
         await session.commit()
 
     return result

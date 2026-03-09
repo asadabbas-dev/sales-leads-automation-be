@@ -106,6 +106,7 @@ async def count_runs(
 async def create_run(
     session: AsyncSession,
     source: str,
+    workflow: str | None,
     payload_json: dict,
     result_json: dict | None,
     status: str,
@@ -113,10 +114,12 @@ async def create_run(
     scheduled_at: str | None = None,
     error: str | None = None,
     idempotency_key: str | None = None,
+    lead_id: str | None = None,
 ) -> Run:
     """Create a run record for audit trail."""
     run = Run(
         source=source,
+        workflow=workflow,
         payload_json=payload_json,
         result_json=result_json,
         status=status,
@@ -124,6 +127,7 @@ async def create_run(
         scheduled_at=scheduled_at,
         error=error,
         idempotency_key=idempotency_key,
+        lead_id=lead_id,
     )
     session.add(run)
     await session.flush()
@@ -157,6 +161,16 @@ async def update_run(
     )
     await session.execute(stmt)
     await session.flush()
+
+    # If the run reached a terminal state, set completed_at once.
+    if status in ("success", "failed"):
+        await session.execute(
+            update(Run)
+            .where(Run.id == run_id, Run.completed_at.is_(None))
+            .values(completed_at=func.now())
+        )
+        await session.flush()
+
     result = await session.execute(select(Run).where(Run.id == run_id))
     return result.scalar_one()
 

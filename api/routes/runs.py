@@ -17,12 +17,17 @@ from pydantic import BaseModel, Field
 from api.db.repository import (
     count_runs,
     create_run,
+    delete_idempotency_key,
     delete_run,
+    get_existing_run_by_key,
     get_run_by_id,
     list_runs,
+    try_create_idempotency_key,
     update_run,
 )
 from api.db.session import async_session
+from api.db.leads_repository import apply_enrichment_to_lead, ensure_lead_from_payload
+from api.services.idempotency import compute_idempotency_key
 from api.services.llm_enrichment import enrich_lead_with_llm
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -53,6 +58,7 @@ class RunUpdateRequest(BaseModel):
 
 class RunResponse(BaseModel):
     id: str
+    lead_id: Optional[str] = None
     source: str
     status: str
     workflow: Optional[str] = None
@@ -63,6 +69,7 @@ class RunResponse(BaseModel):
     error: Optional[str]
     idempotency_key: Optional[str]
     created_at: str
+    completed_at: Optional[str] = None
     # Flattened from result_json for frontend convenience
     qualified: Optional[bool]
     score: Optional[int]
@@ -72,9 +79,10 @@ class RunResponse(BaseModel):
         result = run.result_json or {}
         return cls(
             id=str(run.id),
+            lead_id=str(run.lead_id) if getattr(run, "lead_id", None) else None,
             source=run.source,
             status=run.status,
-            workflow=getattr(run, "workflow", None),
+            workflow=run.workflow,
             priority=run.priority,
             scheduled_at=run.scheduled_at,
             payload_json=run.payload_json,
@@ -82,6 +90,7 @@ class RunResponse(BaseModel):
             error=run.error,
             idempotency_key=run.idempotency_key,
             created_at=run.created_at.isoformat() if run.created_at else "",
+            completed_at=run.completed_at.isoformat() if run.completed_at else None,
             qualified=result.get("qualified"),
             score=result.get("score"),
         )
@@ -173,18 +182,72 @@ async def create_run_api(data: RunCreateRequest):
       4. Return the completed run
     """
 
+    # ── Step 0: Idempotency guard (must happen before LLM call) ───────────────
+    idempotency_key = compute_idempotency_key(data.payload_json)
+    lead_id = None
+
+    if idempotency_key:
+        async with async_session() as session:
+            existing_run = await get_existing_run_by_key(session, idempotency_key)
+            if existing_run and existing_run.result_json:
+                await session.commit()
+                result = existing_run.result_json
+                return RunCreateResponse(
+                    id=str(existing_run.id),
+                    status=existing_run.status,
+                    qualified=result.get("qualified") if isinstance(result, dict) else None,
+                    score=result.get("score") if isinstance(result, dict) else None,
+                    result_json=result if isinstance(result, dict) else None,
+                    error=existing_run.error,
+                    created_at=existing_run.created_at.isoformat() if existing_run.created_at else "",
+                )
+
+            created = await try_create_idempotency_key(session, idempotency_key)
+            if not created:
+                existing_run = await get_existing_run_by_key(session, idempotency_key)
+                if existing_run and existing_run.result_json:
+                    await session.commit()
+                    result = existing_run.result_json
+                    return RunCreateResponse(
+                        id=str(existing_run.id),
+                        status=existing_run.status,
+                        qualified=result.get("qualified") if isinstance(result, dict) else None,
+                        score=result.get("score") if isinstance(result, dict) else None,
+                        result_json=result if isinstance(result, dict) else None,
+                        error=existing_run.error,
+                        created_at=existing_run.created_at.isoformat() if existing_run.created_at else "",
+                    )
+
+                raise HTTPException(
+                    status_code=409,
+                    detail="Duplicate request in progress. Retry after a few seconds.",
+                    headers={"Retry-After": "5"},
+                )
+
+            await session.commit()
+
     # ── Step 1: Save pending run ──────────────────────────────────────────────
     async with async_session() as session:
+        if idempotency_key:
+            lead_id = await ensure_lead_from_payload(
+                session=session,
+                idempotency_key=idempotency_key,
+                payload=data.payload_json,
+                source=data.source,
+            )
+
         run = await create_run(
             session=session,
             source=data.source,
+            workflow=data.workflow,
             payload_json=data.payload_json,
             result_json=None,
             status="pending",
             priority=data.priority,
             scheduled_at=data.scheduled_at,
             error=None,
-            idempotency_key=None,
+            idempotency_key=idempotency_key or None,
+            lead_id=lead_id,
         )
         await session.commit()
         run_id = str(run.id)
@@ -210,6 +273,10 @@ async def create_run_api(data: RunCreateRequest):
             result_json=result_dict,
             error=error_msg,
         )
+        if final_status == "failed" and idempotency_key:
+            await delete_idempotency_key(session, idempotency_key)
+        if final_status == "success" and lead_id:
+            await apply_enrichment_to_lead(session=session, lead_id=lead_id, run=updated)
         await session.commit()
 
     # ── Step 4: Return ────────────────────────────────────────────────────────

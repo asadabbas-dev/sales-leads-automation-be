@@ -6,11 +6,16 @@ class Settings(BaseSettings):
     """App settings loaded from environment / .env file."""
 
     # ── Database ────────────────────────────────────────────────────────────
-    db_host: str = Field(..., env="DB_HOST")
-    db_port: int = Field(..., env="DB_PORT")
-    db_name: str = Field(..., env="DB_NAME")
-    db_user: str = Field(..., env="DB_USER")
-    db_password: str = Field(..., env="DB_PASSWORD")
+    # Preferred single connection string (used by SQLAlchemy async engine).
+    # Example: postgresql+asyncpg://user:pass@localhost:5432/lead_ops
+    database_url: str | None = Field(None, env="DATABASE_URL")
+
+    # Optional discrete fields (only used if DATABASE_URL is not provided)
+    db_host: str = Field("localhost", env="DB_HOST")
+    db_port: int = Field(5432, env="DB_PORT")
+    db_name: str = Field("lead_ops", env="DB_NAME")
+    db_user: str = Field("postgres", env="DB_USER")
+    db_password: str = Field("postgres", env="DB_PASSWORD")
 
     # ── OpenAI ──────────────────────────────────────────────────────────────
     openai_api_key: str = Field(..., env="OPENAI_API_KEY")

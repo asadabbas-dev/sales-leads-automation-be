@@ -6,13 +6,17 @@ from sqlalchemy.engine.url import URL
 from api.config import settings
 from api.db.models import Base
 
-DATABASE_URL = URL.create(
-    drivername="postgresql+asyncpg",
-    username=settings.db_user,
-    password=settings.db_password,
-    host=settings.db_host,
-    port=settings.db_port,
-    database=settings.db_name,
+DATABASE_URL = (
+    settings.database_url
+    if settings.database_url
+    else URL.create(
+        drivername="postgresql+asyncpg",
+        username=settings.db_user,
+        password=settings.db_password,
+        host=settings.db_host,
+        port=settings.db_port,
+        database=settings.db_name,
+    )
 )
 
 engine = create_async_engine(

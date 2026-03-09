@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.db.session import init_db
-from api.routes import enrich, runs
+from api.routes import enrich, leads, metrics, runs
 
 
 @asynccontextmanager
@@ -37,6 +37,8 @@ app.add_middleware(
 
 app.include_router(enrich.router, prefix="/enrich-lead")
 app.include_router(runs.router)
+app.include_router(metrics.router)
+app.include_router(leads.router)
 
 
 @app.get("/health", tags=["health"])
