@@ -14,6 +14,7 @@ from api.db.repository import (
     try_create_idempotency_key,
 )
 from api.db.session import async_session
+from api.schemas.common import success_response
 from api.schemas.enrich import EnrichLeadResponse
 from api.services.idempotency import compute_idempotency_key
 from api.services.llm_enrichment import enrich_lead_with_llm
@@ -22,7 +23,7 @@ from api.db.leads_repository import ensure_lead_from_payload, apply_enrichment_t
 router = APIRouter()
 
 
-@router.post("", response_model=EnrichLeadResponse)
+@router.post("")
 async def enrich_lead(request: Request):
     """
     Enrich and qualify a lead from a raw JSON payload.
@@ -70,7 +71,8 @@ async def enrich_lead(request: Request):
             existing_run = await get_existing_run_by_key(session, idempotency_key)
             if existing_run and existing_run.result_json:
                 await session.commit()
-                return EnrichLeadResponse.model_validate(existing_run.result_json)
+                data = EnrichLeadResponse.model_validate(existing_run.result_json)
+                return success_response(data=data.model_dump(), message="Lead enriched (cached).")
 
             # Atomically claim this request
             created = await try_create_idempotency_key(session, idempotency_key)
@@ -79,7 +81,8 @@ async def enrich_lead(request: Request):
                 existing_run = await get_existing_run_by_key(session, idempotency_key)
                 if existing_run and existing_run.result_json:
                     await session.commit()
-                    return EnrichLeadResponse.model_validate(existing_run.result_json)
+                    data = EnrichLeadResponse.model_validate(existing_run.result_json)
+                    return success_response(data=data.model_dump(), message="Lead enriched (cached).")
                 raise HTTPException(
                     status_code=409,
                     detail="Duplicate request in progress. Retry after a few seconds.",
@@ -132,7 +135,7 @@ async def enrich_lead(request: Request):
             )
         await session.commit()
 
-    return result
+    return success_response(data=result.model_dump(), message="Lead enriched successfully.")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

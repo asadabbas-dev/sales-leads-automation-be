@@ -109,6 +109,95 @@ async def migrate():
     print("  ✓ Column 'runs.lead_id' ensured.")
     await conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_lead_id ON runs(lead_id);")
 
+    # ICP: leads.icp_score and company_profile table (005)
+    await conn.execute("ALTER TABLE leads ADD COLUMN IF NOT EXISTS icp_score INTEGER;")
+    print("  ✓ Column 'leads.icp_score' ensured.")
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS company_profile (
+            id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+            industry VARCHAR(255),
+            company_size VARCHAR(64),
+            budget_min NUMERIC,
+            budget_max NUMERIC,
+            intent_keywords JSONB DEFAULT '[]',
+            location VARCHAR(255),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+    """)
+    print("  ✓ Table 'company_profile' ensured.")
+    await conn.execute("""
+        INSERT INTO company_profile (id, industry, company_size, budget_min, budget_max, intent_keywords, location, updated_at)
+        SELECT 1, NULL, NULL, NULL, NULL, '[]', NULL, now()
+        WHERE NOT EXISTS (SELECT 1 FROM company_profile WHERE id = 1);
+    """)
+    print("  ✓ company_profile row ensured.")
+
+    # Opportunities pipeline (application.md schema)
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS opportunities (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            title VARCHAR(512) NOT NULL,
+            source VARCHAR(64) NOT NULL,
+            deadline DATE,
+            funding_value NUMERIC(14,2),
+            description TEXT,
+            url VARCHAR(2048),
+            organization VARCHAR(512),
+            location VARCHAR(255),
+            industry_tags JSONB DEFAULT '[]',
+            status VARCHAR(32) NOT NULL DEFAULT 'new',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+    """)
+    print("  ✓ Table 'opportunities' ensured.")
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_opportunities_source ON opportunities(source);")
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_opportunities_status ON opportunities(status);")
+    await conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunities_url_unique ON opportunities(url) WHERE url IS NOT NULL;")
+
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS ai_analysis (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            opportunity_id UUID NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+            industry_match JSONB DEFAULT '[]',
+            proposal_complexity VARCHAR(64),
+            success_probability DOUBLE PRECISION,
+            recommended_company_size VARCHAR(64),
+            key_requirements JSONB DEFAULT '[]',
+            raw_response JSONB,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+    """)
+    print("  ✓ Table 'ai_analysis' ensured.")
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_ai_analysis_opportunity_id ON ai_analysis(opportunity_id);")
+
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS opportunity_scores (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            opportunity_id UUID NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+            score INTEGER NOT NULL,
+            priority VARCHAR(64),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+    """)
+    print("  ✓ Table 'opportunity_scores' ensured.")
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_opportunity_scores_opportunity_id ON opportunity_scores(opportunity_id);")
+
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS crm_records (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            opportunity_id UUID NOT NULL REFERENCES opportunities(id) ON DELETE CASCADE,
+            stage VARCHAR(64) NOT NULL,
+            assigned_user VARCHAR(255),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+    """)
+    print("  ✓ Table 'crm_records' ensured.")
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_records_opportunity_id ON crm_records(opportunity_id);")
+    await conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_records_stage ON crm_records(stage);")
+
     await conn.close()
     print("\nMigration complete. You can now restart your FastAPI server.")
 

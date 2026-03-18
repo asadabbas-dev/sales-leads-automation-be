@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     log_level: str = Field("INFO", env="LOG_LEVEL")
     # Maximum JSON payload size accepted by /enrich-lead (bytes). Default 64 KB.
     max_payload_bytes: int = Field(65536, env="MAX_PAYLOAD_BYTES")
+    # Optional rate limiting for POST /opportunities and POST /opportunities/:id/analyze.
+    rate_limit_enabled: bool = Field(False, env="RATE_LIMIT_ENABLED")
+    rate_limit_requests: int = Field(60, env="RATE_LIMIT_REQUESTS")
+    rate_limit_window_seconds: int = Field(60, env="RATE_LIMIT_WINDOW_SECONDS")
 
     model_config = SettingsConfigDict(
         env_file=".env",

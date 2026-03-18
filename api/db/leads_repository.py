@@ -6,7 +6,9 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.db.company_profile_repository import get_company_profile_dict
 from api.db.models import Lead, Run
+from api.services.icp_scoring import compute_icp_score
 
 
 def _extract_str(payload: dict, keys: tuple[str, ...]) -> Optional[str]:
@@ -88,6 +90,15 @@ async def apply_enrichment_to_lead(
     elif qualified is False:
         desired_status = "unqualified"
 
+    # ICP score from company profile
+    profile = await get_company_profile_dict(session)
+    payload_flat = {k: v for k, v in (run.payload_json or {}).items() if v is not None}
+    icp_score = (
+        compute_icp_score(lead_data=payload_flat, result_json=run.result_json, profile=profile)
+        if profile
+        else None
+    )
+
     await session.execute(
         update(Lead)
         .where(Lead.id == lead_id)
@@ -100,6 +111,7 @@ async def apply_enrichment_to_lead(
             latest_qualified=qualified,
             latest_source=run.source,
             status=case_update_status(desired_status),
+            icp_score=icp_score,
             updated_at=func.now(),
         )
     )

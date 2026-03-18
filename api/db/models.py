@@ -4,10 +4,10 @@ Database models for runs and idempotency.
 Schema matches requirements exactly.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, text
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -57,6 +57,7 @@ class Lead(Base):
     latest_score: Mapped[int | None] = mapped_column(nullable=True)
     latest_qualified: Mapped[bool | None] = mapped_column(nullable=True)
     latest_source: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    icp_score: Mapped[int | None] = mapped_column(nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -111,6 +112,28 @@ class Run(Base):
     )
 
 
+class CompanyProfile(Base):
+    """Single-row ideal customer profile (ICP) config."""
+
+    __tablename__ = "company_profile"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False, default=1)
+    industry: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    company_size: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    budget_min: Mapped[float | None] = mapped_column(nullable=True)
+    budget_max: Mapped[float | None] = mapped_column(nullable=True)
+    intent_keywords: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=None)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+    )
+
+
 class IdempotencyKey(Base):
     """Idempotency keys for deduplication."""
 
@@ -118,6 +141,116 @@ class IdempotencyKey(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+    )
+
+
+class Opportunity(Base):
+    """Grant/opportunity from manual entry or API (no scrapers in phase 1)."""
+
+    __tablename__ = "opportunities"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    funding_value: Mapped[float | None] = mapped_column(Numeric(14, 2), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    url: Mapped[str | None] = mapped_column(String(2048), nullable=True, index=True)
+    organization: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    industry_tags: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=None)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="new", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+    )
+
+
+class AiAnalysis(Base):
+    """AI analysis result for an opportunity (one current per opportunity)."""
+
+    __tablename__ = "ai_analysis"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    opportunity_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("opportunities.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    industry_match: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=None)
+    proposal_complexity: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    success_probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    recommended_company_size: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    key_requirements: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=None)
+    raw_response: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+    )
+
+
+class OpportunityScore(Base):
+    """Matching engine score for an opportunity (latest per opportunity)."""
+
+    __tablename__ = "opportunity_scores"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    opportunity_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("opportunities.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    priority: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+    )
+
+
+class CrmRecord(Base):
+    """Internal CRM pipeline stage for an opportunity (one row per opportunity)."""
+
+    __tablename__ = "crm_records"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    opportunity_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("opportunities.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    stage: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    assigned_user: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("now()"),
     )

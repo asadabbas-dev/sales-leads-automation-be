@@ -27,6 +27,7 @@ from api.db.repository import (
 )
 from api.db.session import async_session
 from api.db.leads_repository import apply_enrichment_to_lead, ensure_lead_from_payload
+from api.schemas.common import success_response
 from api.services.idempotency import compute_idempotency_key
 from api.services.llm_enrichment import enrich_lead_with_llm
 
@@ -128,7 +129,7 @@ def _validate_uuid(run_id: str) -> None:
 # LIST RUNS  GET /runs
 # ============================================================
 
-@router.get("", response_model=RunListResponse)
+@router.get("")
 async def list_runs_api(
     status: Optional[str] = Query(None, description="Filter: success | failed | pending"),
     source: Optional[str] = Query(None, description="Filter by source (partial match)"),
@@ -142,19 +143,20 @@ async def list_runs_api(
         total = await count_runs(session, status=status, source=source, search=search)
         await session.commit()
 
-    return RunListResponse(
+    data = RunListResponse(
         runs=[RunResponse.from_run(r) for r in runs],
         total=total,
         limit=limit,
         offset=offset,
     )
+    return success_response(data=data.model_dump(), message="Runs retrieved successfully.")
 
 
 # ============================================================
 # GET SINGLE RUN  GET /runs/{run_id}
 # ============================================================
 
-@router.get("/{run_id}", response_model=RunResponse)
+@router.get("/{run_id}")
 async def get_run_api(run_id: str):
     """Fetch a single run by UUID."""
     _validate_uuid(run_id)
@@ -163,14 +165,15 @@ async def get_run_api(run_id: str):
         if not run:
             raise HTTPException(status_code=404, detail="Run not found.")
         await session.commit()
-    return RunResponse.from_run(run)
+    data = RunResponse.from_run(run)
+    return success_response(data=data.model_dump(), message="Run retrieved successfully.")
 
 
 # ============================================================
 # CREATE RUN  POST /runs
 # ============================================================
 
-@router.post("", response_model=RunCreateResponse, status_code=201)
+@router.post("", status_code=201)
 async def create_run_api(data: RunCreateRequest):
     """
     Create a run and immediately process it through AI qualification.
@@ -192,7 +195,7 @@ async def create_run_api(data: RunCreateRequest):
             if existing_run and existing_run.result_json:
                 await session.commit()
                 result = existing_run.result_json
-                return RunCreateResponse(
+                payload = RunCreateResponse(
                     id=str(existing_run.id),
                     status=existing_run.status,
                     qualified=result.get("qualified") if isinstance(result, dict) else None,
@@ -201,6 +204,7 @@ async def create_run_api(data: RunCreateRequest):
                     error=existing_run.error,
                     created_at=existing_run.created_at.isoformat() if existing_run.created_at else "",
                 )
+                return success_response(data=payload.model_dump(), message="Run completed (cached).")
 
             created = await try_create_idempotency_key(session, idempotency_key)
             if not created:
@@ -208,7 +212,7 @@ async def create_run_api(data: RunCreateRequest):
                 if existing_run and existing_run.result_json:
                     await session.commit()
                     result = existing_run.result_json
-                    return RunCreateResponse(
+                    payload = RunCreateResponse(
                         id=str(existing_run.id),
                         status=existing_run.status,
                         qualified=result.get("qualified") if isinstance(result, dict) else None,
@@ -217,6 +221,7 @@ async def create_run_api(data: RunCreateRequest):
                         error=existing_run.error,
                         created_at=existing_run.created_at.isoformat() if existing_run.created_at else "",
                     )
+                    return success_response(data=payload.model_dump(), message="Run completed (cached).")
 
                 raise HTTPException(
                     status_code=409,
@@ -283,7 +288,7 @@ async def create_run_api(data: RunCreateRequest):
     qualified = result_dict.get("qualified") if result_dict else None
     score = result_dict.get("score") if result_dict else None
 
-    return RunCreateResponse(
+    payload = RunCreateResponse(
         id=run_id,
         status=final_status,
         qualified=qualified,
@@ -292,6 +297,8 @@ async def create_run_api(data: RunCreateRequest):
         error=error_msg,
         created_at=created_at,
     )
+    msg = "Lead qualified successfully." if final_status == "success" else "Run failed."
+    return success_response(data=payload.model_dump(), message=msg)
 
 
 # ============================================================
@@ -323,7 +330,10 @@ async def update_run_api(run_id: str, data: RunUpdateRequest):
         )
         await session.commit()
 
-    return {"success": True, "id": run_id, "status": updated.status}
+    return success_response(
+        data={"id": run_id, "status": updated.status},
+        message="Run updated successfully.",
+    )
 
 
 # ============================================================
@@ -343,4 +353,4 @@ async def delete_run_api(run_id: str):
         await delete_run(session, run_id)
         await session.commit()
 
-    return {"success": True, "deleted": run_id}
+    return success_response(data={"deleted": run_id}, message="Run deleted successfully.")
